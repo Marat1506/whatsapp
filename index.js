@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 async function connectToWhatsApp(onReady) {
-  const { state, saveCreds } = await useMultiFileAuthState(join(__dirname, 'auth_info_baileys'));
+  const { state, saveCreds } = await useMultiFileAuthState(join(__dirname, 'authInfo'));
 
   let version = [2, 2413, 1, 1];
   try {
@@ -50,9 +50,9 @@ async function connectToWhatsApp(onReady) {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       
       if (statusCode === DisconnectReason.badSession) {
-        console.log('Удалите папку auth_info_baileys и перезапустите');
+        console.log('Удалите папку authInfo и перезапустите');
       } else if (statusCode === DisconnectReason.loggedOut) {
-        console.log('Вы вышли из WhatsApp. Удалите папку auth_info_baileys и перезапустите.');
+        console.log('Вы вышли из WhatsApp. Удалите папку authInfo и перезапустите.');
       } else if (shouldReconnect) {
         const delay = statusCode === DisconnectReason.timedOut ? 5000 : 3000;
         console.log(`Переподключение через ${delay / 1000} секунд...\n`);

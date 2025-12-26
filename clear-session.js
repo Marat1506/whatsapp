@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const authFolder = join(__dirname, 'auth_info_baileys');
+const authFolder = join(__dirname, 'authInfo');
 
 console.log('🧹 Очистка сессии WhatsApp...\n');
 
@@ -16,10 +16,10 @@ if (existsSync(authFolder)) {
     console.log('   Теперь при следующем запуске потребуется новый QR-код.\n');
   } catch (error) {
     console.error('❌ Ошибка при удалении сессии:', error.message);
-    console.log('\n💡 Попробуйте удалить папку auth_info_baileys вручную.\n');
+    console.log('\n💡 Попробуйте удалить папку authInfo вручную.\n');
     process.exit(1);
   }
 } else {
-  console.log('ℹ️  Папка auth_info_baileys не найдена.');
+  console.log('ℹ️  Папка authInfo не найдена.');
   console.log('   Сессия уже очищена или еще не создавалась.\n');
 }
