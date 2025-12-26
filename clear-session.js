@@ -23,4 +23,3 @@ if (existsSync(authFolder)) {
   console.log('ℹ️  Папка auth_info_baileys не найдена.');
   console.log('   Сессия уже очищена или еще не создавалась.\n');
 }
-
