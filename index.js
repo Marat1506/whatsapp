@@ -9,113 +9,62 @@ import qrcode from 'qrcode-terminal';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import readline from 'readline';
-import { existsSync, rmSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 async function connectToWhatsApp(onReady) {
-  const authFolder = join(__dirname, 'auth_info_baileys');
-  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
+  const { state, saveCreds } = await useMultiFileAuthState(join(__dirname, 'auth_info_baileys'));
 
-  let version;
+  let version = [2, 2413, 1, 1];
   try {
-    const versionInfo = await fetchLatestBaileysVersion();
-    version = versionInfo.version;
-  } catch (error) {
-    version = [2, 2413, 1, 1];
-  }
+    version = (await fetchLatestBaileysVersion()).version;
+  } catch (e) {}
 
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
-    connectTimeoutMs: 90_000,
-    defaultQueryTimeoutMs: 60_000,
-    keepAliveIntervalMs: 10_000,
-    retryRequestDelayMs: 250,
-    generateHighQualityLinkPreview: false,
-    syncFullHistory: false,
-    fireInitQueries: true,
+    connectTimeoutMs: 90000,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
     },
-    getMessage: async (key) => {
-      return {
-        conversation: 'Сообщение не найдено',
-      };
-    },
+    getMessage: async () => ({ conversation: 'Сообщение не найдено' }),
     browser: ['WhatsApp Baileys', 'Chrome', '1.0.0'],
-    markOnlineOnConnect: true,
   });
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
+    if (update.qr) {
       console.log('\n=== ОТСКАНИРУЙТЕ QR-КОД ===\n');
-      console.log('WhatsApp → Настройки → Связанные устройства → Связать устройство\n');
-      qrcode.generate(qr, { small: true });
+      console.log('WhatsApp => Настройки-> Связанные устройства \n');
+      qrcode.generate(update.qr, { small: true });
       console.log('\n');
       return;
     }
 
-    if (connection === 'close') {
-      const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+    if (update.connection === 'close') {
+      const statusCode = update.lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      const errorMessage = lastDisconnect?.error?.message || '';
-
-      if (statusCode === DisconnectReason.timedOut) {
-        console.log('⏱️  Таймаут подключения');
-        if (errorMessage) {
-          console.log(`Ошибка: ${errorMessage}`);
-        }
-        console.log('Попытка переподключения через 5 секунд...\n');
-        setTimeout(() => {
-          if (shouldReconnect) {
-            connectToWhatsApp(onReady);
-          }
-        }, 5000);
-      } else if (statusCode === DisconnectReason.connectionClosed || 
-                 statusCode === DisconnectReason.connectionLost) {
-        console.log('🔌 Соединение разорвано');
-        if (errorMessage) {
-          console.log(`Ошибка: ${errorMessage}`);
-        }
-        console.log('Попытка переподключения через 5 секунд...\n');
-        setTimeout(() => {
-          if (shouldReconnect) {
-            connectToWhatsApp(onReady);
-          }
-        }, 5000);
-      } else {
-        if (lastDisconnect?.error) {
-          console.log('Ошибка:', lastDisconnect.error.message || lastDisconnect.error);
-          if (statusCode === DisconnectReason.badSession) {
-            console.log('⚠️  Удалите папку auth_info_baileys и перезапустите');
-          }
-        }
-
-        if (shouldReconnect) {
-          setTimeout(() => {
-            connectToWhatsApp(onReady);
-          }, 3000);
-        } else {
-          console.log('Вы вышли из WhatsApp. Удалите папку auth_info_baileys и перезапустите.');
-        }
+      
+      if (statusCode === DisconnectReason.badSession) {
+        console.log('Удалите папку auth_info_baileys и перезапустите');
+      } else if (statusCode === DisconnectReason.loggedOut) {
+        console.log('Вы вышли из WhatsApp. Удалите папку auth_info_baileys и перезапустите.');
+      } else if (shouldReconnect) {
+        const delay = statusCode === DisconnectReason.timedOut ? 5000 : 3000;
+        console.log(`Переподключение через ${delay / 1000} секунд...\n`);
+        setTimeout(() => connectToWhatsApp(onReady), delay);
       }
-    } else if (connection === 'open') {
-      console.log('✅ Подключено к WhatsApp\n');
-      if (onReady) {
-        onReady(sock);
-      }
+    } else if (update.connection === 'open') {
+      console.log(' Подключено к WhatsApp\n');
+      if (onReady) onReady(sock);
     }
   });
 
-  sock.ev.on('messages.upsert', async (m) => {
+  sock.ev.on('messages.upsert', (m) => {
     const msg = m.messages[0];
     if (!msg.key.fromMe && m.type === 'notify') {
       console.log('📨 Сообщение от:', msg.key.remoteJid);
@@ -128,124 +77,60 @@ async function connectToWhatsApp(onReady) {
   return sock;
 }
 
-function formatPhoneToJID(phoneNumber) {
-  const cleanNumber = phoneNumber.replace(/\D/g, '');
-  
-  if (!cleanNumber || cleanNumber.length < 10) {
-    throw new Error('Неверный формат номера телефона');
-  }
-
-  return `${cleanNumber}@s.whatsapp.net`;
-}
-
-async function checkIfRegistered(sock, jid) {
+async function sendMessage(sock, phone, text) {
   try {
-    const [result] = await sock.onWhatsApp(jid);
-    return result?.exists || false;
+    const jid = phone.replace(/\D/g, '') + '@s.whatsapp.net';
+    await sock.sendMessage(jid, { text });
+    console.log('Сообщение отправлено');
   } catch (error) {
-    console.error('Ошибка при проверке номера:', error.message);
-    return false;
-  }
-}
-
-async function sendMessage(sock, phoneNumber, message) {
-  try {
-    const jid = formatPhoneToJID(phoneNumber);
-    const isRegistered = await checkIfRegistered(sock, jid);
-    
-    if (!isRegistered) {
-      console.error('❌ Номер не зарегистрирован в WhatsApp');
-      return { success: false, error: 'Номер не зарегистрирован в WhatsApp' };
-    }
-
-    await sock.sendMessage(jid, { text: message });
-    console.log('✅ Сообщение отправлено');
-    return { success: true, message: 'Сообщение отправлено' };
-  } catch (error) {
-    if (error.status === 404 || error.output?.statusCode === 404) {
-      console.error('❌ Номер не зарегистрирован в WhatsApp');
-      return { success: false, error: 'Номер не зарегистрирован в WhatsApp' };
-    } else if (error.message?.includes('not-a-whatsapp-user') || 
-               error.message?.includes('not registered')) {
-      console.error('❌ Пользователь не использует WhatsApp');
-      return { success: false, error: 'Пользователь не использует WhatsApp' };
+    const msg = error.message || '';
+    if (error.status === 404 || error.output?.statusCode === 404 || msg.includes('not')) {
+      console.error('Номер не зарегистрирован в WhatsApp');
     } else {
-      console.error('❌ Ошибка:', error.message);
-      return { success: false, error: error.message };
+      console.error('Ошибка:', msg);
     }
   }
 }
 
 function createCLI(sock) {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  const askForMessage = () => {
+  const ask = () => {
     rl.question('\nВведите номер телефона (с +) или "exit" для выхода: ', async (phone) => {
       if (phone.toLowerCase() === 'exit') {
-        console.log('Выход...');
         rl.close();
         process.exit(0);
         return;
       }
 
       rl.question('Введите текст сообщения: ', async (text) => {
-        if (!text.trim()) {
-          console.log('❌ Сообщение не может быть пустым');
-          askForMessage();
-          return;
+        if (text.trim()) {
+          await sendMessage(sock, phone, text);
         }
-
-        await sendMessage(sock, phone, text);
-        askForMessage();
+        ask();
       });
     });
   };
 
-  return askForMessage;
-}
-
-function clearAuthSession() {
-  const authFolder = join(__dirname, 'auth_info_baileys');
-  if (existsSync(authFolder)) {
-    try {
-      rmSync(authFolder, { recursive: true, force: true });
-      console.log('✅ Старая сессия удалена. Потребуется новый QR-код.\n');
-      return true;
-    } catch (error) {
-      console.error('❌ Ошибка при удалении сессии:', error.message);
-      return false;
-    }
-  }
-  return false;
+  return ask;
 }
 
 async function main() {
-  console.log('🚀 Запуск WhatsApp приложения...\n');
-
   let isConnected = false;
-
-  const onReady = (sock) => {
+  await connectToWhatsApp((sock) => {
     if (!isConnected) {
       isConnected = true;
       console.log('='.repeat(50));
-      console.log('Приложение готово к работе!');
+      console.log('Приложение готово к работе');
       console.log('='.repeat(50));
-      
-      const askForMessage = createCLI(sock);
-      askForMessage();
-
+      createCLI(sock)();
       global.whatsappSocket = sock;
       global.sendWhatsAppMessage = (phone, text) => sendMessage(sock, phone, text);
     }
-  };
-
-  await connectToWhatsApp(onReady);
+  });
 }
 
 main().catch((err) => {
-  console.error('Критическая ошибка:', err);
+  console.error('ошибка:', err);
   process.exit(1);
 });
