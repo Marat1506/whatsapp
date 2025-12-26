@@ -1,0 +1,24 @@
+{
+  "name": "whatsapp-baileys-app",
+  "version": "1.0.0",
+  "description": "WhatsApp stateful application using Baileys library",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "clear": "node clear-session.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "websocket"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.5",
+    "pino": "^8.17.2",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
+

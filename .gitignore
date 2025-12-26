@@ -1,0 +1,27 @@
+# Зависимости
+node_modules/
+package-lock.json
+yarn.lock
+
+# Данные авторизации WhatsApp (сессия)
+auth_info_baileys/
+
+# Логи
+*.log
+logs/
+
+# Окружение
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
